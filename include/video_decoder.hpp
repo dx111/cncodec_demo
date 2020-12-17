@@ -22,6 +22,8 @@ extern "C" {
 #include <cn_codec_common.h>
 #include <cn_video_dec.h>
 
+#include "blockqueue.h"
+
 
 class Demuxer {
 public:
@@ -60,17 +62,23 @@ public:
 
     ~video_decoder();
 
-//    bool init_ffmpeg();
-
     bool test();
 
     int init_video_create_info(cnvideoDecCreateInfo &createInfo);
 
-    bool update_video_info(cnvideoDecSequenceInfo seq_info);
+    void update_video_create_info(cnvideoDecSequenceInfo seq_info);
 
-    bool start_decoder();
+    int start_decoder(){
+        return cnvideoDecStart(handle, &createInfo);
+    }
 
-    bool add_ref(cnvideoDecOutput *pDecOuput);
+    int add_ref(cnvideoDecOutput *pDecOuput){
+        return cnvideoDecAddReference(handle, &pDecOuput->frame);
+    }
+
+    bool del_ref(cnvideoDecOutput *pDecOuput){
+        return cnvideoDecReleaseReference(handle, &pDecOuput->frame);
+    }
 
 private:
     int device_id_;
@@ -86,6 +94,8 @@ private:
     cnvideoDecCreateInfo createInfo;
 
     bool first_frame_ = true;
+
+    BlockQueue<cnvideoDecOutput *> *queue;
 
 };
 

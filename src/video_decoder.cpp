@@ -19,7 +19,6 @@ int Demuxer::open() {
         return -1;
     }
 
-    /* retrieve stream information */
     if (avformat_find_stream_info(pFormatCtx, NULL) < 0) {
         std::cout << "Could not find stream information";
         return -3;
@@ -31,7 +30,7 @@ int Demuxer::open() {
                   << video_path << "\n";
         return -4;
     } else {
-
+ 
         if (pFormatCtx->streams[video_stream_index]->codec->codec_id == AV_CODEC_ID_H264) {
 
 //            video_type=0;
@@ -81,37 +80,15 @@ video_decoder::~video_decoder() {
 //    cnrtSetCurrentChannel((cnrtChannelType_t)(0));
 //}
 
-bool video_decoder::update_video_info(cnvideoDecSequenceInfo seq_info) {
+void video_decoder::update_video_create_info(cnvideoDecSequenceInfo seq_info) {
     video_type = seq_info.codec;
     createInfo.height = seq_info.height;
     createInfo.width = seq_info.width;
     createInfo.codec = seq_info.codec;
     createInfo.inputBufNum = 5;
-    // seq_info.minInputBufNum;
     createInfo.outputBufNum = 5;
-    // seq_info.minOutputBufNum;
-
-    // seq_info.minInputBufNum;
 }
 
-bool video_decoder::start_decoder() {
-
-    int ret = cnvideoDecStart(handle, &createInfo);
-    if (ret < 0) {
-        std::cout << __FILE__ << "," << __LINE__ << ", Call cnvideoDecStart failed, ret " << ret << "\n";
-        return false;
-    }
-    return true;
-}
-
-bool video_decoder::add_ref(cnvideoDecOutput *pDecOuput) {
-    int ret = cnvideoDecAddReference(&handle, &pDecOuput->frame);
-    if (ret < 0) {
-        std::cout << __FILE__ << "," << __LINE__ << ", Call cnvideoDecAddReference failed, ret(%d)\n";
-        return false;
-    }
-    return true;
-}
 
 bool video_decoder::test() {
     demuxer.open();
@@ -123,10 +100,10 @@ bool video_decoder::test() {
 
     int frame_id = 0;
     first_frame_ = true;
+    cnvideoDecInput decinput;
 
     while (demuxer.read_frame(packet) >= 0) {
         if (packet.stream_index == demuxer.get_video_index()) {
-            cnvideoDecInput decinput;
             std::cout << "length: " << packet.size << "\n";
             struct timeval curTime{};
             gettimeofday(&curTime, nullptr);
@@ -206,16 +183,26 @@ int eventCallback(cncodecCbEventType EventType, void *pData, void *pdata1) {
 
 int sequenceCallback(void *pData, cnvideoDecSequenceInfo *pFormat) {
     auto *decoder = (video_decoder *) pData;
-    decoder->update_video_info(*pFormat);
-    decoder->start_decoder();
+    decoder->update_video_create_info(*pFormat);
+    int ret=decoder->start_decoder();
+    if(ret!=0){
+        std::cout<<__FILE__<<","<<__LINE__<<" , failed to start decoder! \n";
+    }
     return 0;
 }
 
 int newFrameCallback(void *pData, cnvideoDecOutput *pDecOuput) {
-    std::cout << "new frame \n";
-    static int num = 0;
-    int ret = 0;
+    // static int num = 0;
+    // int ret = 0;
     auto *decoder = (video_decoder *) pData;
+
+    decoder->add_ref(pDecOuput);
+
+    decoder->del_ref(pDecOuput);
+
+    std::cout<<"new frame \n";
+
+    // pDecOuput->pts
 //    ret = decoder->add_ref(pDecOuput);
 
     // if (pContext->chanConfig.isEnableDump)
