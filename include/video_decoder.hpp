@@ -15,6 +15,7 @@ extern "C" {
 #endif
 
 #include <string>
+#include <thread>
 #include <sys/time.h>
 #include <iostream>
 #include <assert.h>
@@ -23,6 +24,7 @@ extern "C" {
 #include <cn_video_dec.h>
 
 #include "blockqueue.h"
+#include "blockColllection.h"
 
 
 class Demuxer {
@@ -80,6 +82,31 @@ public:
         return cnvideoDecReleaseReference(handle, &pDecOuput->frame);
     }
 
+    // bool dequeue_frame(cnvideoDecOutput* result){
+    //     cnvideoDecOutput* frame;
+    //     queue->pop(frame);
+    //     if(frame == nullptr) return false;
+    //     *result = *frame;
+    //     delete frame;
+    //     return true;
+    // }
+    // bool enqueue_frame(cnvideoDecOutput *pimage){
+    //     if(pimage == nullptr){
+    //         queue->push(pimage);
+    //         return true;
+    //     }
+    //     cnvideoDecOutput *info = new cnvideoDecOutput();
+    //     *info = *pimage;
+    //     queue->push(info);
+    //     return true;
+    // }
+
+    bool add(cnvideoDecOutput *out){
+        queue.add(out);
+    }
+
+    bool read_frame();
+
 private:
     int device_id_;
     
@@ -94,8 +121,13 @@ private:
     cnvideoDecCreateInfo createInfo;
 
     bool first_frame_ = true;
+    
 
-    BlockQueue<cnvideoDecOutput *> *queue;
+    // BlockQueue<cnvideoDecOutput *> *queue;
+
+    code_machina::BlockingCollection<cnvideoDecOutput*> queue;
+
+    AVPacket packet;
 
 };
 
@@ -112,4 +144,7 @@ int outOfMemoryCallback(void *pData, void *pData1);
 
 int abortErrorCallback(void *pData, void *pData1);
 
+int corrupt_eventCallback(void *pData, void *pdata1);
+
 #endif
+

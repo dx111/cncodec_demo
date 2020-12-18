@@ -22,6 +22,7 @@ public:
     bool push_non_block(PTData &pdata);
     bool pop_non_block(PTData &pdata);
     bool peek(PTData &pdata);
+    int size() const;
 
 private:
     mutable std::mutex mMutex;
@@ -148,5 +149,11 @@ bool BlockQueue<PTData>::pop_non_block(PTData &pdata)
     }
 }
 
+
+template<typename PTData>
+int BlockQueue<PTData>::size() const {
+    std::unique_lock<std::mutex> lock{mMutex};
+    return mTQueue.size();
+}
 
 #endif //BLOCKQUEUE_H

@@ -16,43 +16,41 @@ int Demuxer::open() {
 
     if (avformat_open_input(&(pFormatCtx), video_path.c_str(), 0, &options) < 0) {
         std::cout << "Could't open source file " << video_path.c_str() << "\n";
-        return -1;
+        exit(0);
     }
 
-    if (avformat_find_stream_info(pFormatCtx, NULL) < 0) {
+    if (avformat_find_stream_info(pFormatCtx, nullptr) < 0) {
         std::cout << "Could not find stream information";
-        return -3;
+        exit(0);
     }
 
     video_stream_index = av_find_best_stream(pFormatCtx, AVMEDIA_TYPE_VIDEO, -1, -1, NULL, 0);
     if (video_stream_index < 0) {
         std::cout << "Could't find stream" << av_get_media_type_string(AVMEDIA_TYPE_VIDEO) << " in input file "
                   << video_path << "\n";
-        return -4;
-    } else {
+        exit(0);
+    } 
  
-        if (pFormatCtx->streams[video_stream_index]->codec->codec_id == AV_CODEC_ID_H264) {
-
+    if (pFormatCtx->streams[video_stream_index]->codec->codec_id == AV_CODEC_ID_H264) {
 //            video_type=0;
-        } else if (pFormatCtx->streams[video_stream_index]->codec->codec_id == AV_CODEC_ID_H265) {
+    } else if (pFormatCtx->streams[video_stream_index]->codec->codec_id == AV_CODEC_ID_H265) {
 //            video_type = 0;
-        } else {
-            // format = -1;
-        }
-        /* dump input information to stderr */
-//        av_dump_format(pFormatCtx, 0, video_path.c_str(), 0);
+    } else {
+        // format = -1;
     }
+    /* dump input information to stderr */
+//        av_dump_format(pFormatCtx, 0, video_path.c_str(), 0);
+
     return 0;
 }
 
 
-video_decoder::video_decoder(
-        std::string video_file_path,
-        int device_id) :
+video_decoder::video_decoder(std::string video_file_path,int device_id) :
         video_file_path_(std::move(video_file_path)),
         device_id_(device_id),
-        demuxer(video_file_path_){
-    
+        demuxer(video_file_path_),
+        queue(2){
+            
     init_video_create_info(createInfo);
     int ret = cnvideoDecCreate(&handle, eventCallback, &createInfo);
     if (ret != 0) {
@@ -62,7 +60,8 @@ video_decoder::video_decoder(
         std::cout << "create decoder success. \n";
     }
 
-
+    demuxer.open();
+    (void) av_init_packet(&packet);
 }
 
 
@@ -70,15 +69,6 @@ video_decoder::~video_decoder() {
 
 }
 
-
-//bool video_decoder::cnrt_init()
-//{
-//    cnrtDev_t dev;
-//    CNRT_CHECK(cnrtInit(0));
-//    CNRT_CHECK(cnrtGetDeviceHandle(&dev, device_id_));
-//    CNRT_CHECK(cnrtSetCurrentDevice(dev));
-//    cnrtSetCurrentChannel((cnrtChannelType_t)(0));
-//}
 
 void video_decoder::update_video_create_info(cnvideoDecSequenceInfo seq_info) {
     video_type = seq_info.codec;
@@ -90,33 +80,61 @@ void video_decoder::update_video_create_info(cnvideoDecSequenceInfo seq_info) {
 }
 
 
-bool video_decoder::test() {
-    demuxer.open();
+// void feed_data(){
+//     (void) av_init_packet(&packet);
+// }
 
-    AVPacket packet;
-    (void) av_init_packet(&packet);
-//    packet.data = nullptr;
-//    packet.size = 0;
 
-    int frame_id = 0;
-    first_frame_ = true;
-    cnvideoDecInput decinput;
-
-    while (demuxer.read_frame(packet) >= 0) {
-        if (packet.stream_index == demuxer.get_video_index()) {
-            std::cout << "length: " << packet.size << "\n";
-            struct timeval curTime{};
-            gettimeofday(&curTime, nullptr);
-            decinput.pts = curTime.tv_sec * 1000000 + curTime.tv_usec;
+bool video_decoder::read_frame(){
+    while (queue.size()<1)
+    {
+        cnvideoDecInput decinput;
+        if(demuxer.read_frame(packet)>=0){
+            
+            if (packet.stream_index == demuxer.get_video_index()) {
             decinput.flags |= CNVIDEODEC_FLAG_TIMESTAMP;
             decinput.streamBuf = packet.data;
             decinput.streamLength = (u32_t) packet.size;
             int ret_val = cnvideoDecFeedData(handle, &decinput, 10000);
+            std::cout<<"@@@@@@  feed data @@@@@@"<<ret_val<<" \n";
+
         }
+        }else{
+            std::cout<<"$$$$   eos \n";
+            decinput.flags=CNVIDEODEC_FLAG_EOS;
+            int ret_val = cnvideoDecFeedData(handle, &decinput, 5000);
+        }
+            
     }
 
 
-    return false;
+    auto *p=new cnvideoDecOutput();
+    queue.take(p);
+
+    del_ref(p);
+
+    std::cout<<"pop data\n";
+    return true;
+}
+
+
+bool video_decoder::test() {
+
+    cnvideoDecInput decinput;
+    int ret;
+    while (demuxer.read_frame(packet)>=0) {
+        if (packet.stream_index == demuxer.get_video_index()) {
+            decinput.flags |= CNVIDEODEC_FLAG_TIMESTAMP;
+            decinput.streamBuf = packet.data;
+            decinput.streamLength = (u32_t) packet.size;
+            int ret_val = cnvideoDecFeedData(handle, &decinput, 10000);
+
+        }
+    }
+
+    decinput.flags=CNVIDEODEC_FLAG_EOS;
+    int ret_val = cnvideoDecFeedData(handle, &decinput, 5000);
+    return true;
 }
 
 int video_decoder::init_video_create_info(cnvideoDecCreateInfo &createInfo) {
@@ -138,11 +156,11 @@ int video_decoder::init_video_create_info(cnvideoDecCreateInfo &createInfo) {
 }
 
 int corrupt_eventCallback(void *pData, cnvideoDecStreamCorruptInfo *info) {
-    std::cout << "-------------start---------------\n";
-    std::cout << " frameCount  " << info->frameCount << "\n";
-    std::cout << " frameNumber  " << info->frameNumber << "\n";
-    std::cout << " reserved " << info->reserved << "\n";
-    std::cout << "-------------end----------------\n";
+    std::cout << "-------------info---------------\n";
+    std::cout << "| frameCount  " << info->frameCount << "\n";
+    std::cout << "| frameNumber  " << info->frameNumber << "\n";
+    std::cout << "| reserved " << info->reserved << "\n";
+    std::cout << "--------------------------------\n";
     exit(0);
 }
 
@@ -196,14 +214,10 @@ int newFrameCallback(void *pData, cnvideoDecOutput *pDecOuput) {
     // int ret = 0;
     auto *decoder = (video_decoder *) pData;
 
+    std::cout<<"new frame \n";    // pDecOuput->pts
+
+    decoder->add(pDecOuput);
     decoder->add_ref(pDecOuput);
-
-    decoder->del_ref(pDecOuput);
-
-    std::cout<<"new frame \n";
-
-    // pDecOuput->pts
-//    ret = decoder->add_ref(pDecOuput);
 
     // if (pContext->chanConfig.isEnableDump)
     // {
@@ -242,6 +256,29 @@ int abortErrorCallback(void *pData, void *pData1) {
 }
 
 int main() {
-    video_decoder a("rat.avi");
-    a.test();
+    video_decoder a("/home/duanxiang/demo/codec/examples/demo/rat.avi");
+    int i=0;
+    while (1)
+    {
+        std::cout<<i++<<",loop , "<<a.read_frame()<<"\n";
+        
+        /* code */
+    }
+    
+
+    // a.test();
+    
+    // a.test();
+//    cnvideoDecOutput *result;
+//    bool ret = a.dequeue_frame(result);
+
+
 }
+
+
+
+
+
+
+
+
