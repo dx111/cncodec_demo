@@ -95,23 +95,38 @@ bool video_decoder::read_frame(){
             decinput.flags |= CNVIDEODEC_FLAG_TIMESTAMP;
             decinput.streamBuf = packet.data;
             decinput.streamLength = (u32_t) packet.size;
-            int ret_val = cnvideoDecFeedData(handle, &decinput, 10000);
-            std::cout<<"@@@@@@  feed data @@@@@@"<<ret_val<<" \n";
+            cnrtRet_t ret_val = cnvideoDecFeedData(handle, &decinput, 1000);
+            if(ret_val==0){
+                std::cout<<"@@@@@@ success to feed data \n";
+            }else
+            {
+                std::cout<<"@@@@@@ failed to feed data ,return value is "<<ret_val<<"\n";
+            }
+
+            
 
         }
         }else{
             std::cout<<"$$$$   eos \n";
             decinput.flags=CNVIDEODEC_FLAG_EOS;
             int ret_val = cnvideoDecFeedData(handle, &decinput, 5000);
+            break;
         }
             
     }
 
+    if(queue.size()>0){
+        auto *p=new cnvideoDecOutput();
+        queue.take(p);
+        del_ref(p);
+        return true;
+    }else{
+        std::cout<<"end of video \n";
+        return false;
+    }
 
-    auto *p=new cnvideoDecOutput();
-    queue.take(p);
 
-    del_ref(p);
+
 
     std::cout<<"pop data\n";
     return true;
@@ -127,13 +142,13 @@ bool video_decoder::test() {
             decinput.flags |= CNVIDEODEC_FLAG_TIMESTAMP;
             decinput.streamBuf = packet.data;
             decinput.streamLength = (u32_t) packet.size;
-            int ret_val = cnvideoDecFeedData(handle, &decinput, 10000);
-
+            int ret_val = cnvideoDecFeedData(handle, &decinput, 20);
+        
         }
     }
 
     decinput.flags=CNVIDEODEC_FLAG_EOS;
-    int ret_val = cnvideoDecFeedData(handle, &decinput, 5000);
+    int ret_val = cnvideoDecFeedData(handle, &decinput, 200);
     return true;
 }
 
@@ -258,9 +273,9 @@ int abortErrorCallback(void *pData, void *pData1) {
 int main() {
     video_decoder a("/home/duanxiang/demo/codec/examples/demo/rat.avi");
     int i=0;
-    while (1)
+    while (a.read_frame())
     {
-        std::cout<<i++<<",loop , "<<a.read_frame()<<"\n";
+        std::cout<<i++<<",loop \n";
         
         /* code */
     }

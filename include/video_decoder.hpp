@@ -22,6 +22,7 @@ extern "C" {
 #include <cnrt.h>
 #include <cn_codec_common.h>
 #include <cn_video_dec.h>
+#include <semaphore.h>
 
 #include "blockqueue.h"
 #include "blockColllection.h"
@@ -122,7 +123,6 @@ private:
 
     bool first_frame_ = true;
     
-
     // BlockQueue<cnvideoDecOutput *> *queue;
 
     code_machina::BlockingCollection<cnvideoDecOutput*> queue;
